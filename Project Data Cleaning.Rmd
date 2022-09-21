@@ -1,0 +1,111 @@
+---
+title: "Project Data Cleaning"
+author: "Christina Rhees"
+date: "10/13/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+final_table = readRDS("final_table.RData")
+
+personal_table = readRDS("personal_table.RData")
+
+#removing rows that used to be table headers
+final = final_table[final_table$Player != "Player",]
+```
+
+
+```{r}
+#checking for duplicate values:
+#list of all people who have the same name as someone else
+dups <- personal_table[duplicated(personal_table[,'Player']), ]
+#removing the duplicate people from the person table
+clean_personal = personal_table[!duplicated(personal_table[,'Player']), ]
+
+#removing unimportant columns and duplicate names from metrics table
+clean_table = final[,c(2:5, 8, 22:24, 26:30)]
+clean_table = clean_table[clean_table$Player != dups$Player,]
+
+#Merging the two tables by the player names
+clean = merge(clean_table, clean_personal, all.x = TRUE, by.x = "Player", by.y = "Player")
+```
+
+
+```{r}
+#Checking to see if the dataframe still has null values
+any(is.na(clean))
+```
+
+```{r}
+#Creating the exact age of the players
+clean$`Birth Date` = as.Date(clean$`Birth Date`,format='%B %d, %Y')
+clean$SeasonEnd = paste(clean$Season, "-04-10", sep = "")
+
+clean$ExactAge = lubridate::time_length(difftime(clean$SeasonEnd, clean$`Birth Date`), "years")
+```
+
+
+```{r}
+#checking the exact age column for null values - imputing null values with just their age.
+for (i in 1:length(clean$Age)){
+  if (is.na(clean$ExactAge[i]) == T | is.na(clean$SeasonEnd[i]) == T) {
+      clean$ExactAge[i] = clean$Age[i]
+  }
+}
+
+#checking to make sure all null values have been imputed for exact age
+clean[is.na(clean$ExactAge) == TRUE,]
+```
+
+
+```{r}
+#Changing the height to numerical and exact
+fan = function(x) {
+  nan = strsplit(x, "-")
+  as.numeric(unlist(nan)[1]) + as.numeric(unlist(nan)[2])/12
+}
+
+clean$Ht = apply(clean['Ht'], 1, fan)
+```
+
+
+```{r}
+#converting all numerical variables to numeric
+clean[,c(3,5:12,17:18,22)] = as.numeric(unlist(clean[,c(3,5:12,17:18,22)]))
+```
+
+
+```{r}
+#Removing all rows where the age and exact age don't seem to match each other, mostly null values and then probably some of the duplicate names that didn't get removed.
+cleaned1 = clean[(clean$Age + 2 > clean$ExactAge & clean$ExactAge > clean$Age - 2),]
+```
+
+```{r}
+#filtering by players who played 5 years or more
+cleaned = cleaned1[cleaned1$To - cleaned1$From >= 5, ]
+```
+
+```{r}
+#Cleaning the player positions variables - some had multiple positions assigned to each player, this code takes the first position stated and removes anything else
+new_fan = function(x) {
+  pos_split = strsplit(x, "-")
+  done = unlist(pos_split)[1]
+  done
+}
+#There are two position variables from the two original tables, Pos.x will be used moving forward
+cleaned$Pos.x = apply(cleaned['Pos.x'], 1, new_fan)
+cleaned$Pos.y = apply(cleaned['Pos.y'], 1, new_fan)
+
+#removing the 1 outlier from the BPM data
+cleaned <- cleaned[cleaned$BPM > -200,]
+```
+
+```{r}
+#saving the file
+saveRDS(cleaned, file='cleaned.RData')
+```
+

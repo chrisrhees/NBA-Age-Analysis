@@ -1,0 +1,76 @@
+---
+title: "Project EDA"
+author: "Christina Rhees"
+date: "10/13/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(corrplot)
+library(GGally)
+cleaned = readRDS("cleaned.RData")
+```
+
+Checking for collinearity between variables and the relationship between continuous variables.
+```{r}
+# collinearity check
+cont_vals = c(3, 5:12, 17:18, 22)
+cleaned_cor = cor(cleaned[, cont_vals], use="complete.obs")
+corrplot::corrplot(cleaned_cor)
+
+# option to plot scatter of X number of columns
+plot(cleaned[, cont_vals[c(2:9,12)]])
+```
+
+Looking at players efficiency over the seasons to see if the general values have changed over time - this will indicate if season has any effect on any Player Evaluation Metrics.
+
+There appears to be no change over seasons.
+```{r}
+ggplot(data = cleaned, mapping = aes(x = Season, y = WS)) +
+  geom_point() + geom_smooth(method='lm', formula= y~x)
+
+ggplot(data = cleaned, mapping = aes(x = Season, y = VORP)) +
+  geom_point() + geom_smooth(method='lm', formula= y~x)
+
+ggplot(data = cleaned, mapping = aes(x = Season, y = BPM)) +
+  geom_point() + geom_smooth(method='lm', formula= y~x)
+
+ggplot(data = cleaned, mapping = aes(x = Season, y = PER)) +
+  geom_point() + geom_smooth(method='lm', formula= y~x)
+
+```
+
+Checking for interaction: 
+
+There doesn't appear to be a huge difference between each position besides when looking at WS, I will check later with the models.
+```{r}
+ggplot(data = na.omit(cleaned), mapping = aes(x = ExactAge, y = WS, color = Pos.x)) +
+  geom_point() +
+  xlab("Exact Age") +
+  ylab("Win Shares") + 
+  labs(color = "Position") +
+  geom_smooth()
+
+ggplot(data = na.omit(cleaned), mapping = aes(x = ExactAge, y = VORP, color = Pos.x)) +
+  geom_point() +
+  xlab("Exact Age") +
+  ylab("VORP") + 
+  labs(color = "Position") +
+  geom_smooth()
+
+ggplot(data = cleaned, mapping = aes(x = ExactAge, y = BPM, color = Pos.x)) +
+  geom_point() +
+  geom_smooth()
+
+```
+```{r}
+ggplot(data = cleaned, mapping = aes(x = ExactAge, y = WS/48)) +
+  geom_point() +
+  geom_smooth()
+```
+
+```{r}
+ggplot(data = na.omit(cleaned), mapping = aes(x = Pos.x, y = WS)) + geom_boxplot()
+```
+

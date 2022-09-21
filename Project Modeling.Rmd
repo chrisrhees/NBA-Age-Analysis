@@ -1,0 +1,394 @@
+---
+title: "Project Modeling"
+author: "Christina Rhees"
+date: "11/2/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(survival)
+library(nlme)
+library(splines)
+
+clean = readRDS("cleaned.RData")
+```
+
+```{r}
+#Looking at some individual players just to see their trends, all of these players played for a long time.
+nba_karl = clean[clean$Player == "Karl Malone*", ]
+
+ggplot(data = nba_karl, mapping = aes(x = ExactAge, y = VORP)) + geom_point() + geom_smooth() +
+  xlab("Exact Age") +
+  ggtitle("Karl Malone Age Curve") + 
+  ylab("VORP")
+
+nba_lebron = clean[clean$Player == "LeBron James", ]
+
+ggplot(data = nba_lebron, mapping = aes(x = ExactAge, y = VORP)) + geom_point() + geom_smooth() +
+  xlab("Exact Age") +
+  ggtitle("LeBron James Age Curve") + 
+  ylab("VORP")
+
+nba_chris = clean[clean$Player == "Chris Paul", ]
+
+ggplot(data = nba_chris, mapping = aes(x = ExactAge, y = VORP)) + geom_point() + geom_smooth() +
+  xlab("Exact Age") +
+  ggtitle("Chris Paul Age Curve") + 
+  ylab("VORP")
+```
+
+```{r}
+#removing any na values specific to win shares and the positions
+nba_spex = clean[!is.na(clean$ExactAge) & !is.na(clean$WS) & !is.na(clean$Pos.x),]
+
+#setting the knots for the splines model
+my_knots = seq(19, 42, length = 6)[2:5]
+
+#testing out the bs splines model
+bs_mod = lm(WS ~ bs(ExactAge, knots= my_knots), 
+            data = nba_spex)
+
+bs_gs = seq(18, 45, length=10000)
+#predicting all values in bs_gs (between 18 and 45)
+bs_preds = predict(bs_mod, data.frame(ExactAge = bs_gs))
+
+#testing out the natural splines model
+ns_mod = lm(WS ~ ns(ExactAge, knots= my_knots),
+            data= nba_spex)
+ns_gs = seq(18, 45, length=10000)
+ns_preds = predict(ns_mod, data.frame(ExactAge = ns_gs))
+
+plot(nba_spex[, c('ExactAge', 'WS')], col = 'grey', xlab = "Exact Age", ylab = "Win Shares")
+lines(bs_gs, bs_preds, col="blue")
+lines(ns_gs, ns_preds,col="green")
+```
+
+
+```{r}
+#looking at coefficients
+summary(ns_mod)
+```
+
+```{r}
+#Playing around with the interaction with Player position
+#This creates a matrix that turns all categorical variables into dummy variables
+x_mat = data.frame(model.matrix(WS ~ ExactAge*Pos.x, data = na.omit(nba_spex)))
+
+#EAch of these linear models are only including observations with the specific position.
+ns_mod_PF = lm(nba_spex$WS ~ ns(ExactAge.Pos.xPF, knots= my_knots),
+            data= x_mat)
+ns_mod_PG = lm(nba_spex$WS ~ ns(ExactAge.Pos.xPG, knots= my_knots),
+            data= x_mat)
+ns_mod_SF = lm(nba_spex$WS ~ ns(ExactAge.Pos.xSF, knots= my_knots),
+            data= x_mat)
+ns_mod_SG = lm(nba_spex$WS ~ ns(ExactAge.Pos.xSG, knots= my_knots),
+            data= x_mat)
+ns_gs = seq(18, 45, length=10000)
+
+ns_preds_PF = predict(ns_mod_PF, data.frame(ExactAge.Pos.xPF = ns_gs))
+ns_preds_PG = predict(ns_mod_PG, data.frame(ExactAge.Pos.xPG = ns_gs))
+ns_preds_SF = predict(ns_mod_SF, data.frame(ExactAge.Pos.xSF = ns_gs))
+ns_preds_SG = predict(ns_mod_SG, data.frame(ExactAge.Pos.xSG = ns_gs))
+
+plot(nba_spex[, c('ExactAge', 'WS')], col = 'grey', xlab = "Exact Age", ylab = "Win Shares")
+title(main = "Age Curve with Player Types")
+lines(ns_gs, ns_preds_PF,col="green")
+lines(ns_gs, ns_preds_PG,col="blue")
+lines(ns_gs, ns_preds_SF,col="red")
+lines(ns_gs, ns_preds_SG,col="purple")
+legend("topright", legend = c("PF", "PG", "SF", "SG", "C"),
+       lwd = 3, col = c("green", "blue", "red", "purple", "black"))
+#lines(ns_gs_PF, ns_preds,col="green")
+
+```
+
+```{r}
+#checking the significance of the player positions
+
+#natural splines model without interaction
+nba_lm = lm(WS ~ ns(ExactAge, knots = my_knots), data = nba_spex)
+#natural splines model with interaction
+nba_int_lm = lm(WS ~ ns(x_mat$ExactAge + x_mat$ExactAge.Pos.xPF + x_mat$ExactAge.Pos.xPG + x_mat$ExactAge.Pos.xSF + x_mat$ExactAge.Pos.xSG, knots = my_knots, 5), data = nba_spex)
+
+#anova(nba_int_lm, nba_lm)
+```
+
+
+
+```{r}
+#Creating a function so I can fit a model to and then plot each of the Player Evaluation metrics:
+
+nba_modeling_plot = function(a) {
+  
+  #removing na values
+  nba_spex = clean[!is.na(clean$ExactAge) & !is.na(clean[, a]), ]
+
+  ns_mod = lm(nba_spex[, a] ~ ns(ExactAge, knots= my_knots),
+            data = nba_spex)
+  ns_gs = seq(18, 45, length=10000)
+  ns_preds = predict(ns_mod, data.frame(ExactAge = ns_gs))
+
+  plot(nba_spex[, c('ExactAge', a)], col = 'grey', xlab = "Exact Age", ylab = a)
+  title(main = "Age Curve")
+  lines(ns_gs, ns_preds,col="green")
+  
+  summary(ns_mod)
+}
+
+nba_modeling_plot('PER')
+nba_modeling_plot('WS/48')
+nba_modeling_plot('WS')
+nba_modeling_plot('BPM')
+nba_modeling_plot('VORP')
+```
+
+```{r}
+#Creating a function that creates the splines model with each of the player positions
+nba_plot_int = function(x) {
+  
+  nba_spex = clean[!is.na(clean$ExactAge) & !is.na(clean[, x]), ]
+  x_mat <- data.frame(model.matrix(nba_spex[,x] ~ ExactAge*Pos.x, data = nba_spex))
+
+  ns_mod_PF = lm(nba_spex[ ,x] ~ ns(ExactAge.Pos.xPF, knots= my_knots),
+            data= x_mat)
+  ns_mod_PG = lm(nba_spex[ ,x] ~ ns(ExactAge.Pos.xPG, knots= my_knots),
+            data= x_mat)
+  ns_mod_SF = lm(nba_spex[ ,x] ~ ns(ExactAge.Pos.xSF, knots= my_knots),
+            data= x_mat)
+  ns_mod_SG = lm(nba_spex[ ,x] ~ ns(ExactAge.Pos.xSG, knots= my_knots),
+            data= x_mat)
+  
+  #The Center position was absorbed into the intercept of the x_mat, so i am extracting it to make it into its own model.
+  x_mat$ExactAge.Pos.xC = 0
+  for (i in 1:length(x_mat$ExactAge)) {
+    if ((x_mat$Pos.xPF[i] + x_mat$Pos.xPG[i] + x_mat$Pos.xSF[i] + x_mat$Pos.xSG[i]) == 0) { x_mat$ExactAge.Pos.xC[i] = x_mat$ExactAge[i] }
+  }
+  
+  ns_mod_C = lm(nba_spex[ ,x] ~ ns(ExactAge.Pos.xC, knots= my_knots),
+            data= x_mat)
+  ns_gs = seq(18, 42, length=10000)
+  ns_preds_PF = predict(ns_mod_PF, data.frame(ExactAge.Pos.xPF = ns_gs))
+  ns_preds_PG = predict(ns_mod_PG, data.frame(ExactAge.Pos.xPG = ns_gs))
+  ns_preds_SF = predict(ns_mod_SF, data.frame(ExactAge.Pos.xSF = ns_gs))
+  ns_preds_SG = predict(ns_mod_SG, data.frame(ExactAge.Pos.xSG = ns_gs))
+  ns_preds_C = predict(ns_mod_C, data.frame(ExactAge.Pos.xC = ns_gs))
+
+  plot(nba_spex[, c('ExactAge', x)], col = 'grey', xlab = "Exact Age", ylab = x)
+  title(main = "Age Curve with Player Positions")
+  lines(ns_gs, ns_preds_PF,col="green")
+  lines(ns_gs, ns_preds_PG,col="blue")
+  lines(ns_gs, ns_preds_SF,col="red")
+  lines(ns_gs, ns_preds_SG,col="purple")
+  lines(ns_gs, ns_preds_C,col="black")
+  legend("topright", legend = c("PF", "PG", "SF", "SG", "C"),
+        lwd = 3, col = c("green", "blue", "red", "purple", "black"))
+  anova(ns_mod_PF, ns_mod_PG)
+  
+}
+
+nba_plot_int('PER')
+nba_plot_int('VORP')
+nba_plot_int('BPM')
+nba_plot_int('WS')
+nba_plot_int('WS/48')
+```
+
+
+
+```{r}
+# Creating a function so I can complete cross validation on each of the models:
+
+nba_val = function(x) {
+
+#Removing any null values
+  nba_spex = clean[!is.na(clean$ExactAge) & !is.na(clean[, x]), ]
+
+  model_df = nba_spex
+
+################# Training and Testing Set #####################
+  train_index = sample(nrow(model_df), 0.90*nrow(model_df))
+  nba_train = model_df[train_index, ]
+  nba_test = model_df[-train_index, ]
+
+#putting the data into matrices
+  trainX = model.matrix(nba_train[,x] ~ ExactAge, data=nba_train)[,-c(1)]
+  testX = model.matrix(nba_test[,x] ~ ExactAge, data=nba_test)[,-c(1)]
+
+#Creating the model to train - natural spline
+  spline_train = lm(nba_train[, x] ~ ns(ExactAge, knots= my_knots),
+            data= nba_train)
+  
+#Creating the model to train - quadratic spline
+  spline_train_glm <- glm(nba_train[, x] ~ ns(ExactAge, 2), data = nba_train, family = "gaussian")
+
+#predictions for the training data using the training model.
+  train_preds = predict(spline_train, data.frame(ExactAge = trainX), type="response")
+  
+  train_preds_glm = predict(spline_train_glm, data.frame(ExactAge = trainX), type="response")
+
+#predictions for the testing data using the training model.
+  test_preds = predict(spline_train, data.frame(ExactAge = testX), type = "response")
+  
+  test_preds_glm = predict(spline_train_glm, data.frame(ExactAge = testX), type = "response")
+
+#Training RMSE
+  training_rmse = sqrt(mean((train_preds - nba_train[,x])^2))
+  
+  training_rmse_glm = sqrt(mean((train_preds_glm - nba_train[,x])^2))
+
+#Testing RMSE
+  testing_rmse = sqrt(mean((test_preds - nba_train[,x])^2))
+  
+  testing_rmse_glm = sqrt(mean((test_preds_glm - nba_train[,x])^2))
+
+#R-Squared value
+  training_rsquare = summary(spline_train)$r.squared
+
+################# Validation #####################
+
+  set.seed(21)
+
+#separating the data into a validation and nonvalidation set.
+  validation_sample = sample(nrow(model_df), .05*nrow(model_df))
+  nba_validation = model_df[validation_sample,]
+  nba_nonval = model_df[-validation_sample,]
+
+  # k-fold cross validation
+# usually k is somewhere between 2 and 20
+  k = 10
+
+#taking a sample of the nonvalidation set
+  nonval_sample = sample(nrow(nba_nonval))
+#finding the quantiles of the sample to determine where to split the data into k groups
+  nonval_deciles = quantile(1:nrow(nba_nonval), seq(0, 1, by=1/k))
+  cv_list = list()
+  
+#Separating the data into k groups for cross validaiton
+  for(i in 1:k){
+    randomized_dec = nonval_sample[ceiling(nonval_deciles[i]):floor(nonval_deciles[i+1])]
+    cv_list[[i]] = nba_nonval[randomized_dec, ]
+  }
+
+  pred_list = list()
+  for(i in 1:k) {
+  #putting all of the groups together besides the one being left out to validate
+    cv_dat = do.call(rbind, cv_list[-i])
+    cvX = model.matrix(cv_dat[ ,x] ~ ExactAge, data=cv_dat)
+  #training the model without the extra group
+    spline_cv = lm(cv_dat[ ,x] ~ ns(ExactAge, knots = my_knots), data = data.frame(cvX))
+    test_dat = cv_list[[i]]
+    test_datX = model.matrix(test_dat[ ,x] ~ ExactAge, data=test_dat)
+  #predicting the extra group values with the trained model
+    pred_list[[i]] = predict(spline_cv, data.frame(test_datX), type="response")
+  }
+
+  #putting all of the cross validation predictions together
+  cv_preds = do.call(c, pred_list)
+  
+#repeating the previous steps for the glm model
+  pred_list_glm = list()
+  for(i in 1:k) {
+    cv_dat = do.call(rbind, cv_list[-i])
+    cvX = model.matrix(cv_dat[ ,x] ~ ExactAge, data=cv_dat)
+    spline_cv = glm(cv_dat[ ,x] ~ ns(ExactAge, 2), data = data.frame(cvX), family = "gaussian")
+    
+    test_dat = cv_list[[i]]
+    test_datX = model.matrix(test_dat[ ,x] ~ ExactAge, data=test_dat)
+    pred_list_glm[[i]] = predict(spline_cv, data.frame(test_datX), type="response")
+  }
+
+  cv_preds_glm = do.call(c, pred_list_glm)
+
+#Cross Validation MSE
+  cv_mse = mean((cv_preds-nba_nonval[,x][nonval_sample])^2)
+
+# Cross Validation RMSE Check
+  cv_rmse = sqrt(mean((cv_preds-nba_nonval[ ,x][nonval_sample])^2))
+  
+  cv_rmse_glm = sqrt(mean((cv_preds_glm-nba_nonval[ ,x][nonval_sample])^2))
+
+# Validation Prediction
+  cvallX = model.matrix(nba_nonval[ ,x] ~ ExactAge,data=nba_nonval)
+
+  spline_cvall = lm(nba_nonval[ ,x] ~ ns(ExactAge, knots = my_knots), data = data.frame(cvallX))
+  
+  spline_cvall_glm = glm(nba_nonval[ ,x] ~ ns(ExactAge, 2), data = data.frame(cvallX), family = "gaussian")
+
+  valX =model.matrix(nba_validation[ ,x] ~ ExactAge,data=nba_validation)
+  val_preds = predict(spline_cvall,data.frame(valX),type="response")
+  
+  val_preds_glm = predict(spline_cvall_glm,data.frame(valX),type="response")
+
+# validation MSE
+  val_mse = mean((val_preds-nba_validation[ ,x])^2)
+  val_rmse = sqrt(mean((val_preds-nba_validation[ ,x])^2))
+  
+  val_rmse_glm = sqrt(mean((val_preds_glm-nba_validation[ ,x])^2))
+
+#Training plot
+  plot(density(train_preds), xlab = "Training Predictions", ylab = "Density")
+  lines(density(nba_train[,x]), col = "blue")
+  legend("topleft", legend = c("Predictions", "True Vals"), lty = c(1, 1), col = c("black", "blue"))
+  
+
+#Cross Validation Plot
+  plot(density(cv_preds), xlab = "Cross Validation Predictions", ylab = "Density")
+  lines(density(nba_nonval[,x]),col="blue")
+  legend("topleft", legend = c("Predictions", "True Vals"), lty = c(1, 1), col = c("black", "blue"))
+ 
+#Validation Plot 
+  plot(density(val_preds), xlab = "Validation Predictions", ylab = "Density")
+  lines(density(nba_validation[ ,x]),col="blue")
+  legend("topleft", legend = c("Predictions", "True Vals"), lty = c(1, 1), col = c("black", "blue"))
+  
+#Data Frame of all of the RMSE values
+  not = data.frame(Training = c(training_rmse, training_rmse_glm), Testing = c(testing_rmse, testing_rmse_glm), CrossValidation = c(cv_rmse, cv_rmse_glm),  Validation = c(val_rmse, val_rmse_glm), AIC = c(AIC(spline_train), AIC(spline_train_glm)))
+
+  return(not)
+  
+}
+
+nba_val('VORP')
+nba_val('WS')
+```
+
+```{r}
+#Here I am filtering the data to only players who played 15 years or more to determine if there are apparent differences.
+clean_10 = na.omit(clean[clean$To - clean$From >= 15, ])
+
+ggplot(data = clean_10, mapping = aes(x = ExactAge, y = VORP)) + geom_point() + geom_smooth()
+```
+
+```{r}
+#creating model for WS with the 15 year or more players.
+ws_10 = glm(WS ~ ns(ExactAge, 2), data = clean_10, family = "gaussian")
+
+aging = data.frame(ExactAge = ns_gs)
+aging$ws_10_preds = predict(ws_10, aging)
+
+
+plot(clean_10[, c('ExactAge', 'WS')], col = 'grey', xlab = "Exact Age", ylab = 'WS')
+  lines(ns_gs, ws_10_preds,col="green")
+  abline(v=aging$ExactAge[aging$ws_10_preds == max(aging$ws_10_preds)])
+  
+summary(ws_10)
+```
+
+```{r}
+#creating model for VORP with the 15 year or more players.
+vorp_10 = glm(VORP ~ ns(ExactAge, 2), data = clean_10, family = "gaussian")
+
+aging$vorp_10_preds = predict(vorp_10, aging)
+
+
+plot(clean_10[, c('ExactAge', 'VORP')], col = 'grey', xlab = "Exact Age", ylab = 'VORP')
+  lines(ns_gs, vorp_10_preds,col="green")
+  abline(v=aging$ExactAge[aging$vorp_10_preds == max(aging$vorp_10_preds)])
+  
+summary(ws_10)
+```
+
+
+

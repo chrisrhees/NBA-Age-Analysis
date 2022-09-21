@@ -1,0 +1,196 @@
+---
+title: "Web Scraping For Project"
+author: "Christina Rhees"
+date: "9/16/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(xml2)
+library(rvest)
+library(tidyverse)
+library(rjson)
+library(dplyr)
+library(glue)
+```
+
+Practice from class:
+```{r}
+# NBA player data
+nba_html = "https://www.basketball-reference.com/players/a/"
+
+#then read the html, this turns the webpage into code
+nba_player_list = xml2::read_html(nba_html)
+
+# first, look at what it's located within.
+nba_player_href = nba_player_list %>%
+#nodes are the tags themselves
+  rvest::html_nodes("th") %>%
+  rvest::html_nodes("a") %>%
+  #rvest::html_text() gives the text in the HTML tag
+#attr stands for attributes of the tags
+  rvest::html_attr("href") # on HTML this is <a words> the a is for attribute
+    # so this is the <a href > tags
+# will pull out all the tags specified
+
+#These lines read in the html of every player found in nba_player_href
+sportref_url = "https://www.basketball-reference.com"
+player_page = sportref_url %>%
+  paste0(nba_player_href[1]) %>%
+  xml2::read_html()
+
+#These lines pull all tables from the html
+player_table = player_page %>%
+      html_nodes("table") %>%
+      html_table()
+```
+
+
+```{r}
+#This was my first round of Web scraping, however I got more efficient later and never actually used the dataframe personal_dfs later on. This code does not need to be run to continue the project.
+
+players <- list()
+personal_dfs = list()
+counter = 1
+table_check = list()
+
+#This for loop runs through every letter in the alphabet besides x
+for (i in c(1:23, 25:26)) {
+  
+  #pulling the html for each page with players starting with that letter
+  nba_html = glue("https://www.basketball-reference.com/players/{letters[i]}/")
+  
+  nba_player_list = xml2::read_html(nba_html)
+
+  #Reading in the table that contains all of the players from the html
+  nba_player_df = nba_player_list %>%
+    rvest::html_table()
+  
+  #player_dfs[[i]] = nba_player_df[[i]]
+  
+  #creating a table that contains the html for each player
+  nba_player_href = nba_player_list %>%
+    rvest::html_nodes("th") %>%
+    rvest::html_nodes("a") %>% 
+    rvest::html_attr("href")
+  
+  #filter out players that haven't played more than 5 years
+  nba_long_href = nba_player_href[(nba_player_df[[1]]$To - nba_player_df[[1]]$From) >= 5]
+  
+  nba_recent_name = nba_player_df[[1]] %>%
+    dplyr::filter((To - From) >= 5) %>%
+    .$Player
+  
+  sportref_url = "https://www.basketball-reference.com"
+   
+  for (j in 1:length(nba_long_href)) {
+
+    player_page = sportref_url %>%
+      paste0(nba_long_href[j]) %>%
+      xml2::read_html()
+
+    player_table = player_page %>%
+      html_nodes("table") %>%
+      html_table()
+    
+    table_check[counter] = length(player_table)
+
+      if (length(player_table) >= 6) {
+        personal_dfs[[counter]] = data.frame(player_name=nba_recent_name[j],
+                                              player_href=nba_long_href[j],
+                                              player_table[[5]])
+      }
+
+    counter = counter + 1
+
+  }
+  
+  
+}
+  
+saveRDS(personal_dfs, file='personal_dfs.RData')
+
+```
+
+
+Web scraping Basketball-Reference.com: Start Here
+```{r}
+
+#Practice round with the year 2021
+html = "https://www.basketball-reference.com/leagues/NBA_2021_advanced.html"
+
+nba_advanced = xml2::read_html(html)
+
+advanced_table = nba_advanced %>%
+  rvest::html_table()
+
+table = advanced_table[[1]]
+table$Season = 2021
+
+######################## Web Scraping Player Information #######################
+
+nums = seq(1950, 2021, 1)
+counter = 1
+full_table = list()
+
+#going through the html page for each year from 1950 to 2021
+for (i in nums) {
+  html = glue("https://www.basketball-reference.com/leagues/NBA_{i}_advanced.html")
+  
+  #reading in the html for that year
+  nba_advanced = xml2::read_html(html)
+
+  #reading in the tables found in the html
+  advanced_table = nba_advanced %>%
+    rvest::html_table()
+
+  #pulling the first table, and creating the season variable
+  table = advanced_table[[1]]
+  table$Season = i
+
+  #putting the table into a bigger list for later
+  full_table[[counter]] = table
+  
+  counter = counter + 1
+}
+```
+
+```{r}
+#creating a dataframe out of the list of tables scraped from above, all of the rows
+#are combined.
+final_table = do.call(rbind, full_table)
+```
+
+```{r}
+count = 1
+nba_player_df = list()
+
+#This for loop runs through every letter in the alphabet besides x and pulls out 
+#the table on Basketball-Reference.com of all the players under that letter.
+for (i in c(1:23, 25:26)) {
+  
+  nba_html = glue("https://www.basketball-reference.com/players/{letters[i]}/")
+  nba_player_list = xml2::read_html(nba_html)
+  
+  #creating a list of all of the dataframes from each letter
+  nba_player_df[count] = nba_player_list %>%
+    rvest::html_table()
+  
+  count = count + 1
+
+}
+```
+
+```{r}
+#creating a dataframe out of the list of tables scraped from above, produces each
+#player and some information about them
+personal_table = do.call(rbind, nba_player_df)
+```
+
+
+```{r}
+#saving the two dataframes for the next section.
+saveRDS(final_table, file='final_table.RData')
+saveRDS(personal_table, file='personal_table.RData')
+```
